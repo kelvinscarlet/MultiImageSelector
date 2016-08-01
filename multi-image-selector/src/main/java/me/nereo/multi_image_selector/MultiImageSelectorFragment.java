@@ -12,6 +12,7 @@ import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.MediaStore;
@@ -426,49 +427,79 @@ public class MultiImageSelectorFragment extends Fragment {
         public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
             if (data != null) {
                 if (data.getCount() > 0) {
-                    List<Image> images = new ArrayList<>();
-                    data.moveToFirst();
-                    do{
-                        String path = data.getString(data.getColumnIndexOrThrow(IMAGE_PROJECTION[0]));
-                        String name = data.getString(data.getColumnIndexOrThrow(IMAGE_PROJECTION[1]));
-                        long dateTime = data.getLong(data.getColumnIndexOrThrow(IMAGE_PROJECTION[2]));
-                        if(!fileExist(path)){continue;}
-                        Image image = null;
-                        if (!TextUtils.isEmpty(name)) {
-                            image = new Image(path, name, dateTime);
-                            images.add(image);
-                        }
-                        if( !hasFolderGened ) {
-                            // get all folder data
-                            File folderFile = new File(path).getParentFile();
-                            if(folderFile != null && folderFile.exists()){
-                                String fp = folderFile.getAbsolutePath();
-                                Folder f = getFolderByPath(fp);
-                                if(f == null){
-                                    Folder folder = new Folder();
-                                    folder.name = folderFile.getName();
-                                    folder.path = fp;
-                                    folder.cover = image;
-                                    List<Image> imageList = new ArrayList<>();
-                                    imageList.add(image);
-                                    folder.images = imageList;
-                                    mResultFolder.add(folder);
-                                }else {
-                                    f.images.add(image);
+                    new AsyncTask<Cursor, Integer, List<Image>>() {
+
+                        List<Image> images = new ArrayList<>();
+                        int count = 0;
+
+                        @Override
+                        protected List<Image> doInBackground(Cursor... datas) {
+                            Cursor data = datas[0];
+                            data.moveToFirst();
+                            do {
+                                String path = data.getString(data.getColumnIndexOrThrow(IMAGE_PROJECTION[0]));
+                                String name = data.getString(data.getColumnIndexOrThrow(IMAGE_PROJECTION[1]));
+                                long dateTime = data.getLong(data.getColumnIndexOrThrow(IMAGE_PROJECTION[2]));
+                                if (!fileExist(path)) {
+                                    continue;
                                 }
+                                Image image = null;
+                                if (!TextUtils.isEmpty(name)) {
+                                    image = new Image(path, name, dateTime);
+                                    images.add(image);
+                                }
+                                if (!hasFolderGened) {
+                                    // get all folder data
+                                    File folderFile = new File(path).getParentFile();
+                                    if (folderFile != null && folderFile.exists()) {
+                                        String fp = folderFile.getAbsolutePath();
+                                        Folder f = getFolderByPath(fp);
+                                        if (f == null) {
+                                            Folder folder = new Folder();
+                                            folder.name = folderFile.getName();
+                                            folder.path = fp;
+                                            folder.cover = image;
+                                            List<Image> imageList = new ArrayList<>();
+                                            imageList.add(image);
+                                            folder.images = imageList;
+                                            mResultFolder.add(folder);
+                                        } else {
+                                            f.images.add(image);
+                                        }
+                                    }
+                                }
+                                count++;
+                                if (count % 100 == 0) {
+                                    publishProgress(count);
+                                }
+                            } while (data.moveToNext());
+                            return images;
+                        }
+
+                        @Override
+                        protected void onProgressUpdate(Integer... values) {
+//                            super.onProgressUpdate(values);
+                            mImageAdapter.setData(images);
+                            if (resultList != null && resultList.size() > 0) {
+                                mImageAdapter.setDefaultSelected(resultList);
+                            }
+                            if (!hasFolderGened) {
+                                mFolderAdapter.setData(mResultFolder);
                             }
                         }
 
-                    }while(data.moveToNext());
-
-                    mImageAdapter.setData(images);
-                    if(resultList != null && resultList.size()>0){
-                        mImageAdapter.setDefaultSelected(resultList);
-                    }
-                    if(!hasFolderGened) {
-                        mFolderAdapter.setData(mResultFolder);
-                        hasFolderGened = true;
-                    }
+                        @Override
+                        protected void onPostExecute(List<Image> images) {
+                            mImageAdapter.setData(images);
+                            if (resultList != null && resultList.size() > 0) {
+                                mImageAdapter.setDefaultSelected(resultList);
+                            }
+                            if (!hasFolderGened) {
+                                mFolderAdapter.setData(mResultFolder);
+                                hasFolderGened = true;
+                            }
+                        }
+                    }.execute(data);
                 }
             }
         }
